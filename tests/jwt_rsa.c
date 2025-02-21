@@ -6,410 +6,283 @@
 #include <errno.h>
 #include <time.h>
 
-#include <check.h>
+#include "jwt_tests.h"
 
-#include <jwt.h>
-
-/* Constant time to make tests consistent. */
-#define TS_CONST	1475980545L
-
-/* Macro to allocate a new JWT with checks. */
-#define ALLOC_JWT(__jwt) do {		\
-	int __ret = jwt_new(__jwt);	\
-	ck_assert_int_eq(__ret, 0);	\
-	ck_assert_ptr_ne(__jwt, NULL);	\
-} while(0)
-
-/* Older check doesn't have this. */
-#ifndef ck_assert_ptr_ne
-#define ck_assert_ptr_ne(X, Y) ck_assert(X != Y)
-#define ck_assert_ptr_eq(X, Y) ck_assert(X == Y)
-#endif
-
-#ifndef ck_assert_int_gt
-#define ck_assert_int_gt(X, Y) ck_assert(X > Y)
-#endif
-
-static unsigned char key[16384];
-static size_t key_len;
-
-static const char jwt_rs256_2048[] = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.ey"
-	"JpYXQiOjE0NzU5ODA1NDUsImlzcyI6ImZpbGVzLm1hY2xhcmEtbGxjLmNvbSIsInJlZi"
-	"I6IlhYWFgtWVlZWS1aWlpaLUFBQUEtQ0NDQyIsInN1YiI6InVzZXIwIn0.RlJPQst_lp"
-	"MJUsbnzlT2Mf3xzlHyUlVaQM_PJ1_vpBf1gHkhv-0hm3pa1_HRvpqg5UdDF3iOMLT0GU"
-	"j3W8JveaSvXKFeZdRpQGqmC7MZ7NzaYtyaDT7asniIVDf0JomD8Cfq8IdOn2ZREpbuJ6"
-	"moPwwvJ2zwL3vY-7w5A7ZQ3fxUedPuzn9n6tbEnuXcbDMyWQjen5poYmmvoIrDbzK0Zb"
-	"KbAJ5VrJwME_fZnPHS4c3b8rZGdBJCPI8oT2On6a9LrVqY3riqqHeiSqewfjDsox4tL2"
-	"G5KUpqK0oJmnZPGTnNY774PGabpcPBNbfMJqi8o8r0a7pa7sy6B59P7slUdw";
-
-static const char jwt_rs384_4096[] = "eyJhbGciOiJSUzM4NCIsInR5cCI6IkpXVCJ9.ey"
-	"JpYXQiOjE0NzU5ODA1NDUsImlzcyI6ImZpbGVzLm1hY2xhcmEtbGxjLmNvbSIsInJlZi"
-	"I6IlhYWFgtWVlZWS1aWlpaLUFBQUEtQ0NDQyIsInN1YiI6InVzZXIwIn0.E9e6Chv39H"
-	"FQqhfUFcCxUzyS6yHQvBex_OaQNIPqeoPR_FDquiLhQUJj45IGd8_aVT8DvfzTFSHOP1"
-	"cP_UbzCYtZ8VC0o-idxyjTnlnqMJy75xNBzPUy6OSpTeX9yVQCtIkT6kIom4j35ABibk"
-	"_MdCVqnWG2fijDEeTlLD7uDRcCTGckqQhVOI3t4iIytiUVPnboFiaPLfei_mPcJ6CiOI"
-	"QYF4VOWlDllgUFrQ0M0nKm4Pq6bVaBIMzF0hJrPn_7GCV3XmVLthcObljfydaNm_CcIY"
-	"g7y_8OT_8yAvDlbKBe5jVeq-7_lLCinarkGUZ5ryA2lbC6yPBgtaAU3g6XxP60n6To7z"
-	"akV_5dgcPJFDlTkoBI6pPH3Zf50UYsf-wR4D2J3fP4rcYco4HGtxZ89tfoNYCB8z5-GA"
-	"ImSJRbVSsdadwSKKgldlG9XR13Cq-Ox8Hc7qCd1tTC-NeY31XMuWxd9981bQMeGhBkyJ"
-	"fFnIksh8xyyO0uOPvgmchOtG8bSImfZZaeBI6TcPJ89Oo3iD6NmPdO5AUqv6NB7Y46zH"
-	"GUXCeTuumVk7I_PJ9laICW4-cx1zHDvPY3TphVVTudSqWdUDMjwhrRI23569DByMJE9J"
-	"XpTg7HV_17EPTDWExc6TQVkmmY4QbS0pVbKyJTwwKmnu2F9o2fl1N0NOw1SOM";
-
-static const char jwt_rs512_8192[] = "eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.ey"
-	"JpYXQiOjE0NzU5ODA1NDUsImlzcyI6ImZpbGVzLm1hY2xhcmEtbGxjLmNvbSIsInJlZi"
-	"I6IlhYWFgtWVlZWS1aWlpaLUFBQUEtQ0NDQyIsInN1YiI6InVzZXIwIn0.F3_fF6RGJy"
-	"B_apyq_ljxLP7luYC78wT23pPKAyRSMiDi0g-7Yfohv5_p0rBOCsT1H-1_rImWiIcsdJ"
-	"87oYfQw95G_pHcK56ag7_a1i-jQCV7ZyRAuesDcM1YRealKvdnof08Jw392h685XNK2l"
-	"mqvZ436Hz4oCcQimwuKeR0ndAgm38y-_FswOlb3POwHBJcDtDR3UTvCONyqgcCD5hl5J"
-	"edjA8GA0Mvlp4JV2-ctsNYaDOMQRw3S8hJOXvKySQsbckEj8pC_bCrcbSR8BUJBrjM5Q"
-	"SLslcYGJopyCYAApGsq3t4-uY3Dx-QjWBMgSIgD9BONjv4VXvsfrllWUQmK88qJ4WQFO"
-	"L0PUSJy57lZjpjXReafJcJgdrGI-tFHgqkcb1VxmqnnIFRqadgjJ1BkfFvdExJiOgnvN"
-	"SEQ16AYy2FlxZeaabqyOjc8IlGi7Z9hYZgImL_qn0REJXgvxNtabA9-A4cEMWVDtYkCn"
-	"F_VyYeMOMYKMuoFW5ubLfOhYhDnd_yvkrLzZ76BGXpHtg7cfpnN8dNWp8irwjSByBH4H"
-	"lB0F9NFZydNB8wylFsKesNhmkQYcLnchhA4dBZV888NKVfqIBcM-GWXExtmON0SXg_HX"
-	"YmbO6zTgQ4tGAk4HglRWJYlfgORdcBBtnlwUHXm5L7_0J8KHoyNUGbA2XU1krVhBN-A7"
-	"sxtLof6MZP8c7p65Oc6DH8FulpmnBt8yVID2GnXPfcLs-RgM8QnlSGbNhn9WT2kmBTIV"
-	"eniVfp_IJ40Kd4SROGa_XbXMTufympqyYSSxtqHblGgtolVGdpN05FDvInG0J0dojYxT"
-	"_puZ-fvBAMXRPeoC_t_1ScfER4CjsUedbReQLZmE-9nJKhCZKqiba5qCbq8riZYiROGJ"
-	"rtVryTywLzw7XX4D-s9oJsEk6ELSRI-buXuCqyCmbdRpFz-i2-VPmNQIalk_0Pq_dOZN"
-	"y0GCvcezkhx1quGKPDmFskJnvKZmC70er0DvOQl1A909kFivxIXfTzlu8jUJt8PPi0gU"
-	"-nnOGSYxC8tD16vwHvAP3KPYvUzmC2N0r6_yM2_Y-JH5Vypeecbuh66cx18Bqk1nQYfg"
-	"BLjuJwQSIKRNNBLtgU7mcyI0Lj4-TWbE-22dYYvKcPMxSmfwAmJUm7ZFUAq_Ok-46AmV"
-	"RYg-h7bZZlfutOiWuoBrmnqQ6dEDGjXiEgWhtAx5HG3qn1_vmA3JQxJAWEfuhHa3IWac"
-	"MDRrJehImeyDE0H0rpOsxSXOjnDqiFBsf9d0-zJNFvo9tWlK_-d-N40BIy5eZm37FKG7"
-	"g2rFmXtuicUs6jiwu0_tHSi1fPKO7YN2ezQc9HAoBvvrur1z_XGbDSmFTQNTv0Cg";
-
-static const char jwt_rs256_invalid[] = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9"
-	".eyJpYXQiOjE0NzU5ODA1NDUsImlzcyI6ImZpbGVzLmN5cGhyZS5jb20iLCJyZWYiOiJ"
-	"YWFhYLVlZWVktWlpaWi1BQUFBLUNDQ0MiLCJzdWIiOiJ1c2VyMCJ9.IAmCornholio";
-
-static void read_key(const char *key_file)
+START_TEST(rsa_pub_missing)
 {
-	FILE *fp = fopen(key_file, "r");
-	char *key_path;
-	int ret = 0;
+	const char *json = "{\"kty\":\"RSA\"}";
+	jwk_set_t *jwk_set = NULL;
+	const jwk_item_t *item;
+	const char exp[] = "Missing required RSA component: n or e";
 
-	ret = asprintf(&key_path, KEYDIR "/%s", key_file);
-	ck_assert_int_gt(ret, 0);
+	SET_OPS();
 
-	fp = fopen(key_path, "r");
-	ck_assert_ptr_ne(fp, NULL);
+	jwk_set = jwks_create(json);
 
-	jwt_free_str(key_path);
+	ck_assert_ptr_nonnull(jwk_set);
+	ck_assert(!jwks_error(jwk_set));
 
-	key_len = fread(key, 1, sizeof(key), fp);
-	ck_assert_int_ne(key_len, 0);
+	item = jwks_item_get(jwk_set, 0);
+	ck_assert_ptr_nonnull(item);
+	ck_assert_int_ne(jwks_item_error(item), 0);
 
-	ck_assert_int_eq(ferror(fp), 0);
+	ck_assert_str_eq(exp, jwks_item_error_msg(item));
 
-	fclose(fp);
-
-	key[key_len] = '\0';
-}
-
-static void __test_alg_key(const char *key_file, const char *jwt_str,
-			   const jwt_alg_t alg)
-{
-	jwt_t *jwt = NULL;
-	int ret = 0;
-	char *out;
-
-	ALLOC_JWT(&jwt);
-
-	read_key(key_file);
-
-	ret = jwt_add_grant(jwt, "iss", "files.maclara-llc.com");
-	ck_assert_int_eq(ret, 0);
-
-	ret = jwt_add_grant(jwt, "sub", "user0");
-	ck_assert_int_eq(ret, 0);
-
-	ret = jwt_add_grant(jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
-	ck_assert_int_eq(ret, 0);
-
-	ret = jwt_add_grant_int(jwt, "iat", TS_CONST);
-	ck_assert_int_eq(ret, 0);
-
-	ret = jwt_set_alg(jwt, alg, key, key_len);
-	ck_assert_int_eq(ret, 0);
-
-	out = jwt_encode_str(jwt);
-	ck_assert_ptr_ne(out, NULL);
-
-	ck_assert_str_eq(out, jwt_str);
-
-	jwt_free_str(out);
-	jwt_free(jwt);
-}
-
-static void __verify_alg_key(const char *key_file, const char *jwt_str,
-			     const jwt_alg_t alg)
-{
-	jwt_valid_t *jwt_valid = NULL;
-	jwt_t *jwt = NULL;
-	int ret = 0;
-
-	read_key(key_file);
-
-	ret = jwt_decode(&jwt, jwt_str, key, key_len);
-	ck_assert_int_eq(ret, 0);
-	ck_assert(jwt != NULL);
-
-	jwt_valid_new(&jwt_valid, alg);
-
-	ret = jwt_validate(jwt, jwt_valid);
-	ck_assert_int_eq(JWT_VALIDATION_SUCCESS, ret);
-
-	jwt_valid_free(jwt_valid);
-	jwt_free(jwt);
-}
-
-START_TEST(test_jwt_encode_rs256)
-{
-	__test_alg_key("rsa_key_2048.pem", jwt_rs256_2048, JWT_ALG_RS256);
+	jwks_free(jwk_set);
 }
 END_TEST
 
-START_TEST(test_jwt_verify_rs256)
+
+START_TEST(rsa_pub_bad_type)
 {
-	__verify_alg_key("rsa_key_2048-pub.pem", jwt_rs256_2048, JWT_ALG_RS256);
+	const char *json = "{\"kty\":\"RSA\",\"n\":\"YmFkdmFsdWUK\",\"e\":1}";
+	jwk_set_t *jwk_set = NULL;
+	const jwk_item_t *item;
+	const char exp[] = "Error decoding pub components";
+
+	SET_OPS();
+
+	jwk_set = jwks_create(json);
+
+	ck_assert_ptr_nonnull(jwk_set);
+	ck_assert(!jwks_error(jwk_set));
+
+	item = jwks_item_get(jwk_set, 0);
+	ck_assert_ptr_nonnull(item);
+	ck_assert_int_ne(jwks_item_error(item), 0);
+
+	ck_assert_str_eq(exp, jwks_item_error_msg(item));
+
+	jwks_free(jwk_set);
 }
 END_TEST
 
-START_TEST(test_jwt_validate_rs256)
+START_TEST(rsa_pub_bad64)
 {
-	jwt_t *jwt = NULL;
-	jwt_valid_t *jwt_valid = NULL;
-	int ret = 0;
+	const char *json = "{\"kty\":\"RSA\",\"n\":\"\",\"e\":\"asaadaaaaaa\"}";
+	jwk_set_t *jwk_set = NULL;
+	const jwk_item_t *item;
+	const char exp[] = "Error decoding pub components";
 
-	read_key("rsa_key_2048-pub.pem");
+	SET_OPS();
 
-	ret = jwt_decode(&jwt, jwt_rs256_2048, key, key_len);
-	ck_assert_int_eq(ret, 0);
-	ck_assert(jwt != NULL);
+	jwk_set = jwks_create(json);
 
-	jwt_valid_new(&jwt_valid, JWT_ALG_RS256);
-	ck_assert(jwt_valid != NULL);
+	ck_assert_ptr_nonnull(jwk_set);
+	ck_assert(!jwks_error(jwk_set));
 
-	ret = jwt_valid_add_grant(jwt_valid, "iss", "files.maclara-llc.com");
-	ck_assert_int_eq(ret, 0);
+	item = jwks_item_get(jwk_set, 0);
+	ck_assert_ptr_nonnull(item);
+	ck_assert_int_ne(jwks_item_error(item), 0);
 
-	ret = jwt_valid_add_grant_int(jwt_valid, "iat", TS_CONST);
-	ck_assert_int_eq(ret, 0);
+	ck_assert_str_eq(exp, jwks_item_error_msg(item));
 
-	ck_assert_int_eq(JWT_VALIDATION_SUCCESS, jwt_validate(jwt, jwt_valid));
-
-	jwt_valid_free(jwt_valid);
-	jwt_free(jwt);
+	jwks_free(jwk_set);
 }
 END_TEST
 
-START_TEST(test_jwt_encode_rs384)
+START_TEST(rsa_pub_binary64)
 {
-	__test_alg_key("rsa_key_4096.pem", jwt_rs384_4096, JWT_ALG_RS384);
+	const char *json = "{\"kty\":\"RSA\",\"n\":"
+		"\"2fyxRFHaYP2a4pbdTK/s9x4YWV7qAWwJMXMkbRmy51w\","
+		"\"e\":\"2fyxRFHaYP2a4pbdTK/s9x4YWV7qAWwJMXMkbRmy51w\"}";
+	jwk_set_t *jwk_set = NULL;
+	const jwk_item_t *item;
+
+	SET_OPS();
+
+	jwk_set = jwks_create(json);
+
+	ck_assert_ptr_nonnull(jwk_set);
+	ck_assert(!jwks_error(jwk_set));
+
+	item = jwks_item_get(jwk_set, 0);
+	ck_assert_ptr_nonnull(item);
+	ck_assert_ptr_nonnull(jwks_item_pem(item));
+	ck_assert_int_eq(jwks_item_error(item), 0);
+
+	jwks_free(jwk_set);
 }
 END_TEST
 
-START_TEST(test_jwt_verify_rs384)
+START_TEST(rsa_priv_missing)
 {
-	__verify_alg_key("rsa_key_4096-pub.pem", jwt_rs384_4096, JWT_ALG_RS384);
+	const char *json = "{\"kty\":\"RSA\",\"n\":\"YmFkdmFsdWUK\","
+		"\"e\":\"YmFkdmFsdWUK\",\"d\":\"YmFkdmFsdWUK\"}";
+	jwk_set_t *jwk_set = NULL;
+	const jwk_item_t *item;
+	const char exp[] = "Some priv key components exist, but some are missing";
+
+	SET_OPS();
+
+	jwk_set = jwks_create(json);
+
+	ck_assert_ptr_nonnull(jwk_set);
+	ck_assert(!jwks_error(jwk_set));
+
+	item = jwks_item_get(jwk_set, 0);
+	ck_assert_ptr_nonnull(item);
+	ck_assert_int_ne(jwks_item_error(item), 0);
+
+	ck_assert_str_eq(exp, jwks_item_error_msg(item));
+
+	jwks_free(jwk_set);
 }
 END_TEST
 
-START_TEST(test_jwt_encode_rs512)
+START_TEST(rsa_priv_bad64)
 {
-	__test_alg_key("rsa_key_8192.pem", jwt_rs512_8192, JWT_ALG_RS512);
+	const char *json = "{\"kty\":\"RSA\",\"n\":\"YmFkdmFsdWUK\","
+		"\"e\":\"YmFkdmFsdWUK\",\"d\":"
+		"\"2fyxRFHaYP2a4pbdTK/s9x4YWV7qAWwJMXMkbRmy51w\","
+		"\"p\":\"\",\"q\":\"=\",\"dp\":\"\",\"dq\":\"\",\"qi\":\"\"}";
+	jwk_set_t *jwk_set = NULL;
+	const jwk_item_t *item;
+	const char exp[] = "Error decoding priv components";
+
+	SET_OPS();
+
+	jwk_set = jwks_create(json);
+
+	ck_assert_ptr_nonnull(jwk_set);
+	ck_assert(!jwks_error(jwk_set));
+
+	item = jwks_item_get(jwk_set, 0);
+	ck_assert_ptr_nonnull(item);
+	ck_assert_int_ne(jwks_item_error(item), 0);
+
+	ck_assert_str_eq(exp, jwks_item_error_msg(item));
+
+	jwks_free(jwk_set);
 }
 END_TEST
 
-START_TEST(test_jwt_verify_rs512)
+START_TEST(rsa_short)
 {
-	__verify_alg_key("rsa_key_8192-pub.pem", jwt_rs512_8192, JWT_ALG_RS512);
-}
-END_TEST
-
-static const char jwt_rsa_i37[] = "eyJraWQiOiJkWUoxTDVnbWd0eDlWVU9xbVpyd2F6cW"
-	"NhK3B5c1lHNUl3N3RSUXB6a3Z3PSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJhMDQyZj"
-	"Y4My0xODNiLTQ1ZWUtOTZiYy1lNDdlYjhiMzc2MTYiLCJ0b2tlbl91c2UiOiJhY2Nlc3"
-	"MiLCJzY29wZSI6ImF3cy5jb2duaXRvLnNpZ25pbi51c2VyLmFkbWluIiwiaXNzIjoiaH"
-	"R0cHM6XC9cL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tXC91cy1lYX"
-	"N0LTFfUWJvMXlMZ0ZIIiwiZXhwIjoxNDg1ODgyNDg5LCJpYXQiOjE0ODU4Nzg4ODksIm"
-	"p0aSI6Ijg1MTBlMGVkLWU3N2UtNDJmZS1hMmI2LTgyMjAzMDcxZWQyOCIsImNsaWVudF"
-	"9pZCI6IjdicTVhanV0czM1anVmamVnMGYwcmhzNnRpIiwidXNlcm5hbWUiOiJhZG1pbj"
-	"MifQ.IZqzZEuwKCVT0acHk3p5DnzPSNxg1tLISt8wZCMAHJAnLSdtbtVibrCTZkTLP5z"
-	"PD16MgzgsID_CFF2wZXPGBihhyihu1B5W8GimY4eQOKrt4qiLJgK-D8tG6MSZ2K_9DC3"
-	"RwhMjrNL4lpu2YoSOgugRdKpJWy4zadtHKptFkKrkI8qjnDoDSkF0kt4I6S1xOcEPuVh"
-	"EOrGsfKr5Bm1N3wX9OVQhcTiVugKrpU8x0Mv1AJYdaxKASOQ6fFlNquwfohgLDwy3By3"
-	"xU6RoY6ZWhKm5dcGW7H9gqmr9X4aBmHDmYG5KQtodwf0LOYtprPAXCs9X7Ja-7ddJvko"
-	"8mDObTA";
-
-START_TEST(test_jwt_verify_rsa_i37)
-{
-	__verify_alg_key("rsa_key_i37-pub.pem", jwt_rsa_i37, JWT_ALG_RS256);
-}
-END_TEST
-
-START_TEST(test_jwt_encode_rsa_with_ec)
-{
-	jwt_t *jwt = NULL;
-	int ret = 0;
-	char *out;
-
-	ALLOC_JWT(&jwt);
-
-	read_key("ec_key_secp384r1.pem");
-
-	ret = jwt_add_grant(jwt, "iss", "files.maclara-llc.com");
-	ck_assert_int_eq(ret, 0);
-
-	ret = jwt_add_grant(jwt, "sub", "user0");
-	ck_assert_int_eq(ret, 0);
-
-	ret = jwt_add_grant(jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
-	ck_assert_int_eq(ret, 0);
-
-	ret = jwt_add_grant_int(jwt, "iat", TS_CONST);
-	ck_assert_int_eq(ret, 0);
-
-	ret = jwt_set_alg(jwt, JWT_ALG_RS384, key, key_len);
-	ck_assert_int_eq(ret, 0);
-
-	out = jwt_encode_str(jwt);
-	ck_assert_ptr_eq(out, NULL);
-	ck_assert_int_eq(errno, EINVAL);
-
-	jwt_free(jwt);
-}
-END_TEST
-
-START_TEST(test_jwt_verify_invalid_token)
-{
-	jwt_t *jwt = NULL;
-	int ret = 0;
-
-	read_key("rsa_key_2048.pem");
-
-	ret = jwt_decode(&jwt, jwt_rs256_invalid, key, JWT_ALG_RS512);
-	ck_assert_int_ne(ret, 0);
-	ck_assert_ptr_eq(jwt, NULL);
-}
-END_TEST
-
-START_TEST(test_jwt_verify_invalid_alg)
-{
-	jwt_t *jwt = NULL;
-	int ret = 0;
-
-	read_key("rsa_key_2048.pem");
-
-	ret = jwt_decode(&jwt, jwt_rs256_2048, key, JWT_ALG_RS512);
-	ck_assert_int_ne(ret, 0);
-	ck_assert_ptr_eq(jwt, NULL);
-}
-END_TEST
-
-START_TEST(test_jwt_verify_invalid_cert)
-{
-	jwt_t *jwt = NULL;
-	int ret = 0;
-
-	read_key("rsa_key_8192-pub.pem");
-
-	ret = jwt_decode(&jwt, jwt_rs256_2048, key, JWT_ALG_RS256);
-	ck_assert_int_ne(ret, 0);
-	ck_assert_ptr_eq(jwt, NULL);
-}
-END_TEST
-
-START_TEST(test_jwt_verify_invalid_cert_file)
-{
-	jwt_t *jwt = NULL;
-	int ret = 0;
-
-	read_key("rsa_key_invalid-pub.pem");
-
-	ret = jwt_decode(&jwt, jwt_rs256_2048, key, JWT_ALG_RS256);
-	ck_assert_int_ne(ret, 0);
-	ck_assert_ptr_eq(jwt, NULL);
-}
-END_TEST
-
-START_TEST(test_jwt_encode_invalid_key)
-{
-	jwt_t *jwt = NULL;
-	int ret = 0;
+	const char token[] = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI"
+		"xMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlh"
+		"dCI6MTUxNjIzOTAyMn0.NHVaYe26MbtOYhSKkoKYdFVomg4i8ZJd8_-RU8VNb"
+		"ftc4TSMb4bXP3l3YlNWACwyXPGffz5aXHc6lty1Y2t4SWRqGteragsVdZufDn"
+		"5BlnJl9pdR_kdVFUsra2rWKEofkZeIC4yWytE58sMIihvo9H1ScmmVwBcQP6X"
+		"ETqYd0aSHp1gOa9RdUPDvoXQ5oqygTqVtxaDr6wUFKrKItgBMzWIdNZ6y7O9E"
+		"0DhEPTbE9rfBo6KTFsHAZnMg4k68CDp2woYIaXbmYTWcvbzIuHO7_37GT79Xd"
+		"Iwkm95QJ7hYC9RiwrV7mesbY4PAahERJawntho0my942XheVLmGwLMBkQ";
+	jwt_builder_auto_t *builder = NULL;
+	jwt_checker_auto_t *checker = NULL;
 	char *out = NULL;
+	int ret;
 
-	ALLOC_JWT(&jwt);
+	SET_OPS();
 
-	read_key("rsa_key_invalid.pem");
+	builder = jwt_builder_new();
+	ck_assert_ptr_nonnull(builder);
+	ck_assert_int_eq(jwt_builder_error(builder), 0);
 
-	ret = jwt_add_grant(jwt, "iss", "files.maclara-llc.com");
+	read_json("rsa_key_1024.json");
+	ret = jwt_builder_setkey(builder, JWT_ALG_RS256, g_item);
 	ck_assert_int_eq(ret, 0);
 
-	ret = jwt_add_grant(jwt, "sub", "user0");
+	out = jwt_builder_generate(builder);
+	ck_assert_ptr_null(out);
+	ck_assert_str_eq(jwt_builder_error_msg(builder),
+			"Key too short for RSA algs: 1024 bits");
+
+	ret = jwt_builder_setkey(builder, JWT_ALG_RS256, g_item);
 	ck_assert_int_eq(ret, 0);
 
-	ret = jwt_add_grant(jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
-	ck_assert_int_eq(ret, 0);
+	checker = jwt_checker_new();
+	ck_assert_ptr_nonnull(checker);
+	ck_assert_int_eq(jwt_checker_error(checker), 0);
 
-	ret = jwt_add_grant_int(jwt, "iat", TS_CONST);
-	ck_assert_int_eq(ret, 0);
+	ret = jwt_checker_setkey(checker, JWT_ALG_RS256, g_item);
+        ck_assert_int_eq(ret, 0);
 
-	ret = jwt_set_alg(jwt, JWT_ALG_RS512, key, key_len);
-	ck_assert_int_eq(ret, 0);
+	ret = jwt_checker_verify(checker, token);
+	ck_assert_int_ne(ret, 0);
+	ck_assert_str_eq(jwt_checker_error_msg(checker),
+			 "Key too short for RSA algs: 1024 bits");
 
-	out = jwt_encode_str(jwt);
-	ck_assert_ptr_eq(out, NULL);
-
-	jwt_free(jwt);
+	free_key();
 }
 END_TEST
 
-static Suite *libjwt_suite(void)
+START_TEST(rsa_ec_short)
+{
+        jwt_builder_auto_t *builder = NULL;
+        char *out = NULL;
+        int ret;
+
+	SET_OPS();
+
+	builder = jwt_builder_new();
+	ck_assert_ptr_nonnull(builder);
+	ck_assert_int_eq(jwt_builder_error(builder), 0);
+
+	read_json("rsa_key_1024.json");
+	ret = jwt_builder_setkey(builder, JWT_ALG_ES256, g_item);
+        ck_assert_int_eq(ret, 0);
+
+	out = jwt_builder_generate(builder);
+	ck_assert_ptr_null(out);
+	ck_assert_str_eq(jwt_builder_error_msg(builder),
+			"Key needs to be 256 bits: 1024 bits");
+
+	ret = jwt_builder_setkey(builder, JWT_ALG_EDDSA, g_item);
+	ck_assert_int_eq(ret, 0);
+
+	out = jwt_builder_generate(builder);
+	ck_assert_ptr_null(out);
+	ck_assert_str_eq(jwt_builder_error_msg(builder),
+			"Key needs to be 256 or 456 bits: 1024 bits");
+
+	ret = jwt_builder_setkey(builder, JWT_ALG_ES384, g_item);
+	ck_assert_int_eq(ret, 0);
+
+	out = jwt_builder_generate(builder);
+	ck_assert_ptr_null(out);
+	ck_assert_str_eq(jwt_builder_error_msg(builder),
+			"Key needs to be 384 bits: 1024 bits");
+
+	ret = jwt_builder_setkey(builder, JWT_ALG_ES512, g_item);
+	ck_assert_int_eq(ret, 0);
+
+	out = jwt_builder_generate(builder);
+	ck_assert_ptr_null(out);
+	ck_assert_str_eq(jwt_builder_error_msg(builder),
+			"Key needs to be 521 bits: 1024 bits");
+
+	free_key();
+}
+END_TEST
+
+static Suite *libjwt_suite(const char *title)
 {
 	Suite *s;
 	TCase *tc_core;
+	int i = ARRAY_SIZE(jwt_test_ops);
 
-	s = suite_create("LibJWT RSA Sign/Verify");
+	s = suite_create(title);
 
-	tc_core = tcase_create("jwt_rsa");
+	tc_core = tcase_create("jwt_jwks_rsa");
 
-	tcase_add_test(tc_core, test_jwt_encode_rs256);
-	tcase_add_test(tc_core, test_jwt_verify_rs256);
-	tcase_add_test(tc_core, test_jwt_validate_rs256);
-	tcase_add_test(tc_core, test_jwt_encode_rs384);
-	tcase_add_test(tc_core, test_jwt_verify_rs384);
-	tcase_add_test(tc_core, test_jwt_encode_rs512);
-	tcase_add_test(tc_core, test_jwt_verify_rs512);
-	tcase_add_test(tc_core, test_jwt_verify_rsa_i37);
-	tcase_add_test(tc_core, test_jwt_encode_rsa_with_ec);
-	tcase_add_test(tc_core, test_jwt_verify_invalid_token);
-	tcase_add_test(tc_core, test_jwt_verify_invalid_alg);
-	tcase_add_test(tc_core, test_jwt_verify_invalid_cert);
-	tcase_add_test(tc_core, test_jwt_verify_invalid_cert_file);
-	tcase_add_test(tc_core, test_jwt_encode_invalid_key);
+	/* RSA specific error path tests */
+	tcase_add_loop_test(tc_core, rsa_pub_missing, 0, i);
+	tcase_add_loop_test(tc_core, rsa_pub_bad64, 0, i);
+	tcase_add_loop_test(tc_core, rsa_pub_bad_type, 0, i);
+	tcase_add_loop_test(tc_core, rsa_pub_binary64, 0, i);
+	tcase_add_loop_test(tc_core, rsa_priv_missing, 0, i);
+	tcase_add_loop_test(tc_core, rsa_priv_bad64, 0, i);
+	tcase_add_loop_test(tc_core, rsa_short, 0, i);
+	tcase_add_loop_test(tc_core, rsa_ec_short, 0, i);
 
-	tcase_set_timeout(tc_core, 120);
+	tcase_set_timeout(tc_core, 30);
 
 	suite_add_tcase(s, tc_core);
 
 	return s;
 }
 
-int main(int argc, char *argv[])
+int main(void)
 {
-	int number_failed;
-	Suite *s;
-	SRunner *sr;
-
-	s = libjwt_suite();
-	sr = srunner_create(s);
-
-	srunner_run_all(sr, CK_VERBOSE);
-	number_failed = srunner_ntests_failed(sr);
-	srunner_free(sr);
-
-	return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+	JWT_TEST_MAIN("LibJWT JWKS Error Path Testing RSA");
 }

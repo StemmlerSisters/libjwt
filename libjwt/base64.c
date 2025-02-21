@@ -1,189 +1,165 @@
-/*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
- *
- * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
- * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
- * @APPLE_LICENSE_HEADER_END@
- */
-/* ====================================================================
- * Copyright (c) 1995-1999 The Apache Group.  All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. All advertising materials mentioning features or use of this
- *    software must display the following acknowledgment:
- *    "This product includes software developed by the Apache Group
- *    for use in the Apache HTTP server project (http://www.apache.org/)."
- *
- * 4. The names "Apache Server" and "Apache Group" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For written permission, please contact
- *    apache@apache.org.
- *
- * 5. Products derived from this software may not be called "Apache"
- *    nor may "Apache" appear in their names without prior written
- *    permission of the Apache Group.
- *
- * 6. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by the Apache Group
- *    for use in the Apache HTTP server project (http://www.apache.org/)."
- *
- * THIS SOFTWARE IS PROVIDED BY THE APACHE GROUP ``AS IS'' AND ANY
- * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE APACHE GROUP OR
- * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
- * OF THE POSSIBILITY OF SUCH DAMAGE.
- * ====================================================================
- *
- * This software consists of voluntary contributions made by many
- * individuals on behalf of the Apache Group and was originally based
- * on public domain software written at the National Center for
- * Supercomputing Applications, University of Illinois, Urbana-Champaign.
- * For more information on the Apache Group and the Apache HTTP server
- * project, please see <http://www.apache.org/>.
- *
- */
-
-/* Base64 encoder/decoder. Originally Apache file ap_base64.c
- */
-
-#include <string.h>
+/* This is a public domain base64 implementation written by WEI Zhicheng. */
 
 #include "base64.h"
 
-/* aaaack but it's fast and const should make it shared text page. */
-static const unsigned char pr2six[256] =
-{
-    /* ASCII table */
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63,
-    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
-    64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
-    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 64,
-    64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64
+#define BASE64_PAD '='
+#define BASE64DE_FIRST '+'
+#define BASE64DE_LAST 'z'
+
+/* BASE 64 encode table */
+static const char base64en[] = {
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+	'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+	'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+	'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+	'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+	'w', 'x', 'y', 'z', '0', '1', '2', '3',
+	'4', '5', '6', '7', '8', '9', '+', '/',
 };
 
-int jwt_Base64decode(char *bufplain, const char *bufcoded)
+/* ASCII order for BASE 64 decode, 255 in unused character */
+static const unsigned char base64de[] = {
+	/* nul, soh, stx, etx, eot, enq, ack, bel, */
+	   255, 255, 255, 255, 255, 255, 255, 255,
+
+	/*  bs,  ht,  nl,  vt,  np,  cr,  so,  si, */
+	   255, 255, 255, 255, 255, 255, 255, 255,
+
+	/* dle, dc1, dc2, dc3, dc4, nak, syn, etb, */
+	   255, 255, 255, 255, 255, 255, 255, 255,
+
+	/* can,  em, sub, esc,  fs,  gs,  rs,  us, */
+	   255, 255, 255, 255, 255, 255, 255, 255,
+
+	/*  sp, '!', '"', '#', '$', '%', '&', ''', */
+	   255, 255, 255, 255, 255, 255, 255, 255,
+
+	/* '(', ')', '*', '+', ',', '-', '.', '/', */
+	   255, 255, 255,  62, 255, 255, 255,  63,
+
+	/* '0', '1', '2', '3', '4', '5', '6', '7', */
+	    52,  53,  54,  55,  56,  57,  58,  59,
+
+	/* '8', '9', ':', ';', '<', '=', '>', '?', */
+	    60,  61, 255, 255, 255, 255, 255, 255,
+
+	/* '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', */
+	   255,   0,   1,  2,   3,   4,   5,    6,
+
+	/* 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', */
+	     7,   8,   9,  10,  11,  12,  13,  14,
+
+	/* 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', */
+	    15,  16,  17,  18,  19,  20,  21,  22,
+
+	/* 'X', 'Y', 'Z', '[', '\', ']', '^', '_', */
+	    23,  24,  25, 255, 255, 255, 255, 255,
+
+	/* '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', */
+	   255,  26,  27,  28,  29,  30,  31,  32,
+
+	/* 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', */
+	    33,  34,  35,  36,  37,  38,  39,  40,
+
+	/* 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', */
+	    41,  42,  43,  44,  45,  46,  47,  48,
+
+	/* 'x', 'y', 'z', '{', '|', '}', '~', del, */
+	    49,  50,  51, 255, 255, 255, 255, 255
+};
+
+unsigned int
+base64_encode(const unsigned char *in, unsigned int inlen, char *out)
 {
-    int nbytesdecoded;
-    register const unsigned char *bufin;
-    register unsigned char *bufout;
-    register int nprbytes;
+	int s;
+	unsigned int i;
+	unsigned int j;
+	unsigned char c;
+	unsigned char l;
 
-    bufin = (const unsigned char *) bufcoded;
-    while (pr2six[*(bufin++)] <= 63);
-    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
-    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
+	s = 0;
+	l = 0;
+	for (i = j = 0; i < inlen; i++) {
+		c = in[i];
 
-    bufout = (unsigned char *) bufplain;
-    bufin = (const unsigned char *) bufcoded;
+		switch (s) {
+		case 0:
+			s = 1;
+			out[j++] = base64en[(c >> 2) & 0x3F];
+			break;
+		case 1:
+			s = 2;
+			out[j++] = base64en[((l & 0x3) << 4) | ((c >> 4) & 0xF)];
+			break;
+		case 2:
+			s = 0;
+			out[j++] = base64en[((l & 0xF) << 2) | ((c >> 6) & 0x3)];
+			out[j++] = base64en[c & 0x3F];
+			break;
+		}
+		l = c;
+	}
 
-    while (nprbytes > 4) {
-    *(bufout++) =
-        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
-    *(bufout++) =
-        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
-    *(bufout++) =
-        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
-    bufin += 4;
-    nprbytes -= 4;
-    }
+	switch (s) {
+	case 1:
+		out[j++] = base64en[(l & 0x3) << 4];
+		out[j++] = BASE64_PAD;
+		out[j++] = BASE64_PAD;
+		break;
+	case 2:
+		out[j++] = base64en[(l & 0xF) << 2];
+		out[j++] = BASE64_PAD;
+		break;
+	}
 
-    /* Note: (nprbytes == 1) would be an error, so just ignore that case */
-    if (nprbytes > 1) {
-    *(bufout++) =
-        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
-    }
-    if (nprbytes > 2) {
-    *(bufout++) =
-        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
-    }
-    if (nprbytes > 3) {
-    *(bufout++) =
-        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
-    }
+	out[j] = 0;
 
-    *(bufout++) = '\0';
-    nbytesdecoded -= (4 - nprbytes) & 3;
-    return nbytesdecoded;
+	return j;
 }
 
-static const char basis_64[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-int jwt_Base64encode(char *encoded, const char *string, int len)
+unsigned int
+base64_decode(const char *in, unsigned int inlen, unsigned char *out)
 {
-    int i;
-    char *p;
+	unsigned int i;
+	unsigned int j;
+	unsigned char c;
 
-    p = encoded;
-    for (i = 0; i < len - 2; i += 3) {
-    *p++ = basis_64[(string[i] >> 2) & 0x3F];
-    *p++ = basis_64[((string[i] & 0x3) << 4) |
-                    ((int) (string[i + 1] & 0xF0) >> 4)];
-    *p++ = basis_64[((string[i + 1] & 0xF) << 2) |
-                    ((int) (string[i + 2] & 0xC0) >> 6)];
-    *p++ = basis_64[string[i + 2] & 0x3F];
-    }
-    if (i < len) {
-    *p++ = basis_64[(string[i] >> 2) & 0x3F];
-    if (i == (len - 1)) {
-        *p++ = basis_64[((string[i] & 0x3) << 4)];
-        *p++ = '=';
-    }
-    else {
-        *p++ = basis_64[((string[i] & 0x3) << 4) |
-                        ((int) (string[i + 1] & 0xF0) >> 4)];
-        *p++ = basis_64[((string[i + 1] & 0xF) << 2)];
-    }
-    *p++ = '=';
-    }
+	if (inlen & 0x3) {
+		/* We sanitize the input to where this never gets hit */
+		return 0; // LCOV_EXCL_LINE
+	}
 
-    *p++ = '\0';
-    return p - encoded;
+	for (i = j = 0; i < inlen; i++) {
+		if (in[i] == BASE64_PAD) {
+			break;
+		}
+		if (in[i] < BASE64DE_FIRST || in[i] > BASE64DE_LAST) {
+			return 0;
+		}
+
+		c = base64de[(unsigned char)in[i]];
+		if (c == 255) {
+			return 0;
+		}
+
+		switch (i & 0x3) {
+		case 0:
+			out[j] = (c << 2) & 0xFF;
+			break;
+		case 1:
+			out[j++] |= (c >> 4) & 0x3;
+			out[j] = (c & 0xF) << 4; 
+			break;
+		case 2:
+			out[j++] |= (c >> 2) & 0xF;
+			out[j] = (c & 0x3) << 6;
+			break;
+		case 3:
+			out[j++] |= c;
+			break;
+		}
+	}
+
+	return j;
 }
